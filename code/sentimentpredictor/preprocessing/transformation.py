@@ -4,31 +4,20 @@ from typing import Any, Dict, Optional, Union, Iterable
 import re, string, html
 
 import pandas as pd
+import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.pipeline import Pipeline
 
 class TextTfidfTransformer(BaseEstimator, TransformerMixin):
     """
-    TF-IDF transformer that operates on a 1-D text sequence (pandas.Series or list of str).
+    ColumnTransformer-friendly text cleaner + TF-IDF.
 
-    Config schema (example):
-    ------------------------
-    cleaning:
-      enabled: true
-      unescape_html: true
-      lowercase: true
-      remove_urls: true
-      remove_html_tags: true
-      remove_digits: true
-      remove_punct: true
-      squeeze_ws: true
-    tfidf:
-      lowercase: false         # keep false: lowercasing is done in cleaning
-      strip_accents: unicode
-      analyzer: word
-      ngram_range: [1, 2]
-      min_df: 2
-      max_features: 200000
+    - Works with ColumnTransformer where you pass the column selector separately:
+        ColumnTransformer([("text", TextTfidfTransformer(cfg), "sentence"), ...])
+      so this class never needs to know the column name.
+    - Accepts 1-D text (Series/list/ndarray) or 2-D with a single column.
+
     """
 
     def __init__(self, config: Union[str, Dict[str, Any]]):
@@ -49,7 +38,7 @@ class TextTfidfTransformer(BaseEstimator, TransformerMixin):
 
     def _validate_config(self):
         cfg = self.config
-        
+
         defaults_cleaning = dict(
             enabled=True,
             unescape_html=True,
@@ -79,15 +68,12 @@ class TextTfidfTransformer(BaseEstimator, TransformerMixin):
         self.tfidf_params = {**defaults_tfidf, **user_tfidf}
 
 
-    # -------------------------- helpers --------------------------
-    def _clean_text(self, t: Any) -> str:
-        """Apply minimal, fast cleaning steps according to `self.cleaning` flags."""
+    # --------------------- helpers ---------------------
+    def _clean_one(self, t: Any) -> str:
         if not self.cleaning.get("enabled", True):
             return t if isinstance(t, str) else ""
-
         if not isinstance(t, str):
             t = "" if t is None else str(t)
-
         if self.cleaning.get("unescape_html", True):
             t = html.unescape(t)
         if self.cleaning.get("lowercase", True):
@@ -104,42 +90,45 @@ class TextTfidfTransformer(BaseEstimator, TransformerMixin):
             t = re.sub(r"\s+", " ", t).strip()
         return t
 
-    def _to_series(self, X: Iterable[Any]) -> pd.Series:
-        """Ensure we operate on a pandas Series of strings."""
+
+    def _as_series_1d(self, X: Any) -> pd.Series:
+        """
+        Accept a DataFrame/Series/list/tuple/ndarray and return a 1-D Series[str].
+        - If X is 2-D (n, 1), squeeze it.
+        - If X is a DataFrame with 1 column, squeeze to Series.
+        """
+        if isinstance(X, pd.DataFrame):
+            if X.shape[1] != 1:
+                raise ValueError("Expected a single text column (got shape %s)." % (X.shape,))
+            X = X.iloc[:, 0]
         if isinstance(X, pd.Series):
             s = X
         elif isinstance(X, (list, tuple)):
             s = pd.Series(X)
+        elif isinstance(X, np.ndarray):
+            if X.ndim == 2 and X.shape[1] == 1:
+                s = pd.Series(X.ravel())
+            elif X.ndim == 1:
+                s = pd.Series(X)
+            else:
+                raise ValueError("NumPy input must be 1-D or 2-D with a single column.")
         else:
-            raise TypeError("TextTfidfTransformer expects a pandas.Series or a 1-D list/tuple of strings.")
+            raise TypeError("Unsupported input type. Provide DataFrame/Series/list/tuple/ndarray.")
         return s.astype(str)
 
-    # ------------------------- sklearn API -----------------------
+    # --------------------- sklearn API ---------------------
     def fit(self, X, y=None):
-        s = self._to_series(X)
-        cleaned = s.map(self._clean_text)
-        self.vectorizer_ = TfidfVectorizer(**self.tfidf_params).fit(cleaned)
+        s = self._as_series_1d(X).map(self._clean_one)
+        self.vectorizer_ = TfidfVectorizer(**self.tfidf_params).fit(s)
         return self
 
     def transform(self, X):
         if self.vectorizer_ is None:
             raise RuntimeError("Transformer not fitted. Call fit() or fit_transform() first.")
-        s = self._to_series(X)
-        cleaned = s.map(self._clean_text)
-        return self.vectorizer_.transform(cleaned)
+        s = self._as_series_1d(X).map(self._clean_one)
+        return self.vectorizer_.transform(s)
 
-
-    # Compatibility utilities
     def get_feature_names_out(self, input_features=None):
-        """
-        Expose learned feature names, e.g., for inspection or export.
-        """
         if self.vectorizer_ is None:
             raise RuntimeError("Transformer not fitted. Call fit() first.")
         return self.vectorizer_.get_feature_names_out()
-    
-
-#@dataclass
-#class DataTransformationConfig:
-#    preprocessor_obj_file_path=os.path.join('artifacts',"proprocessor.pkl")
-#
