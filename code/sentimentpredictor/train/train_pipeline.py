@@ -3,7 +3,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from service.textcleaner import TextCleaner  # <-- import from module
+from code.sentimentpredictor.dataprocessing.utils.textcleaner import TextCleaner  # <-- import from module
 
 # code/train_pipeline.py (snippet)
 import argparse

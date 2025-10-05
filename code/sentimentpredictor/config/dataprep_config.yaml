@@ -1,0 +1,19 @@
+columns:
+  text: "text"
+  rating: "rating"
+  label: "sentiment"
+
+labeling:
+  mapping: {1: 0, 2: 0, 3: 1, 4: 2, 5: 2}
+  dtype: int
+
+filters:
+  dropna: false
+  min_text_len: 1
+  keep_only_sentence_and_label: false
+  explode_sentences: true
+
+  duplicated_values_cols: ['text', 'user_id', 'asin']
+
+
+    

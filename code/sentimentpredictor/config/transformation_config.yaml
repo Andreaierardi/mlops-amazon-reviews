@@ -1,0 +1,20 @@
+cleaning:
+  enabled: true
+  unescape_html: true
+  lowercase: true
+  remove_urls: true
+  remove_html_tags: true
+  remove_digits: true
+  remove_punct: true
+  squeeze_ws: true
+
+tfidf:
+  lowercase: false
+  strip_accents: unicode
+  # Define tokens type
+  analyzer: word
+  ngram_range: [1, 2]
+  #	Minimum document frequency”: keeps only words or n-grams that appear in at least 2 documents
+  min_df: 2
+  # Limits the total number of features (columns)
+  max_features: 100000
