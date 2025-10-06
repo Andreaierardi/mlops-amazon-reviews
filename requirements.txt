@@ -6,3 +6,4 @@ numpy
 scikit-learn==1.4.2
 nltk
 orjson
+mlflow

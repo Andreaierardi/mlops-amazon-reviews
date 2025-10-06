@@ -15,16 +15,40 @@ The project includes:
 ### Requirements
 - python3.10
 - docker
+- mlflow
 
 ### Run:
+
+- MLFlow server
+```bash
+mlflow server \
+  --backend-store-uri sqlite:///mlruns/mlflow.db \
+  --serve-artifacts \
+  --host 0.0.0.0 \
+  --port 5001
+```
+
+- Model Training 
+```bash
+docker build -t tfidf-sentiment-train -f training.dockerfile .
+docker run --rm  -e MLFLOW_TRACKING_URI=http://host.docker.internal:5001 \
+  -e MLFLOW_S3_IGNORE_TLS=true \
+  tfidf-sentiment-train
+```
+
 - Inference Server API
 ```bash
 docker build -t tfidf-sentiment -f inference.dockerfile .
-docker run -p 8000:8000 tfidf-sentiment
-```
+docker run -p 8000:8000 \
+  --add-host=host.docker.internal:host-gateway \
+  -e MLFLOW_TRACKING_URI=http://host.docker.internal:5001 \
+  -e MODEL_URI=models:/sentiment-predictor/Production \
+  tfidf-sentiment
+  ```
+  
 - Test deployed server:
 ```bash
-curl -X POST localhost:8002/predict -H 'Content-Type: application/json' \
+curl -X POST localhost:8000/predict -H 'Content-Type: application/json' \
 -d '{"sentences":["I loved this", "meh", "terrible product", "product is ok, can be better"]}'
 
 ```
@@ -37,11 +61,7 @@ curl -X POST localhost:8002/predict -H 'Content-Type: application/json' \
 }
 ```
 
-- Model Training 
-```bash
-docker build -t tfidf-sentiment-train -f training.dockerfile .
-docker run docker run tfidf-sentiment-train
-```
+
 <br>
 
 
@@ -61,25 +81,25 @@ hey -z 30s -c 20 -m POST -H "Content-Type: application/json" \
 ### 📊 Summary
 | Metric | Result |
 |---------|---------|
-| **Total duration** | 30.08 seconds |
-| **Requests/sec** | 215.75 |
-| **Average latency** | 92.7 ms |
-| **Fastest request** | 13.3 ms |
-| **Slowest request** | 405.1 ms |
-| **Total responses** | 6,489 |
+| **Total duration** | 30,02 seconds |
+| **Requests/sec** | 513,94 |
+| **Average latency** | 38,9 ms |
+| **Fastest request** | 10,9 ms |
+| **Slowest request** | 199,7 ms |
+| **Total responses** | 15,428 |
 | **Successful (200)** | 100% |
 ---
 ### ⏱️ Latency distribution
 
 | Percentile | Latency |
 |-------------|----------|
-| 10% | 54.9 ms |
-| 25% | 66.8 ms |
-| 50% (median) | 83.8 ms |
-| 75% | 108.8 ms |
-| 90% | 142.0 ms |
-| 95% | 165.3 ms |
-| **99% (p99)** | **236.4 ms ✅** |
+| 10% | 25 ms |
+| 25% | 29.7 ms |
+| 50% (median) | 35.6 ms |
+| 75% | 43.6 ms |
+| 90% | 54.5 ms |
+| 95% | 64.8 ms |
+| **99% (p99)** | **102.9 ms ✅** |
 
 > **p99 latency < 300 ms target achieved**
 
@@ -88,19 +108,20 @@ hey -z 30s -c 20 -m POST -H "Content-Type: application/json" \
 ### 📈 Response time histogram
 | % | Graph |
 |-------------|----------|
-|0.013 [1]   | <br>
-|0.052 [497] |■■■■■■ <br>
-|0.092 [3379]|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ <br>
-|0.131 [1740]|■■■■■■■■■■■■■■■■■■■■■ <br>
-|0.170 [587] |■■■■■■■ <br>
-|0.209 [177] |■■ <br>
-|0.248 [67]  |■ <br>
-|0.288 [28]  | <br>
-|0.327 [9]   | <br>
-|0.366 [2]   | <br>
-|0.405 [2]   | <br>
+|0.011 [1]   | <br>
+|0.030 [3903] | ■■■■■■■■■■■■■■■■■  <br>
+|0.049 [9106] | ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■   <br> 
+| 0.068 [1733] | ■■■■■■■■   <br>
+| 0.86 [397] |■■   <br>
+| 0.105 [143] | <br>
+| 0.124 [58] | <br>
+| 0.143 [32] | <br>
+| 0.162 [23] | <br>
+| 0.181 [19] | <br>
+| 0.200 [13] |  <br>
+
 
 ---
-- **p99 latency = 236 ms**, meeting the **<300 ms requirement**.  
-- No failed requests; consistent throughput (~216 req/sec).  
+- **p99 latency = 102.9 ms**, meeting the **<300 ms requirement**.  
+- No failed requests; consistent throughput (~514 req/sec).  
 - The deployment is suitable for local and cloud scaling (Docker-ready).
