@@ -51,7 +51,7 @@ def load_model():
             client = mlflow.MlflowClient()
 
             logger.info(f"Attempting MLflow model load: {model_uri}")
-            model_obj = mlflow.sklearn.load_model('models:/sentiment-predictor/latest')
+            model_obj = mlflow.sklearn.load_model(model_uri) #models:/sentiment-predictor/latest'
             model_source = "mlflow"
             logger.info("Loaded model from MLflow.")
         except Exception as e:
