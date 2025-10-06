@@ -16,12 +16,16 @@ from sklearn.model_selection import train_test_split
 from preprocessing.datapreparator import DataPreparator          
 from preprocessing.transformation import TextTfidfTransformer    
 
+TEXT_COL, LABEL_COL = "sentence", "sentiment"
+DATAPREP_FILE_NAME = 'dataprep_config.yaml'
+TRANSF_FILE_NAME = 'transformation_config.yaml'
+
 def main(args):
     root_path = Path(__file__).parent.parent.parent
 
     config_path = root_path / args.config_path
-    prep_path = config_path / 'dataprep_config.yaml'
-    transf_path = config_path / 'transformation_config.yaml'
+    prep_path = config_path / DATAPREP_FILE_NAME
+    transf_path = config_path / TRANSF_FILE_NAME
 
     # --- Load YAML config properly ---
     with open(prep_path, "r", encoding="utf-8") as f:
@@ -33,13 +37,12 @@ def main(args):
 
 
     # 1) load data
-    print('Data file path:', args.train_file)
+    print('Data file path:',args.train_file)
     df = pd.read_json(args.train_file, lines=True)
     # 2) prepare sentences + labels
     prep = DataPreparator(prep_config)  # supports explode_sentences, etc.
     df_prepared = prep.transform(df)            # → columns: ['sentence', 'sentiment']
 
-    TEXT_COL, LABEL_COL = "sentence", "sentiment"
 
     X_train, X_val, y_train, y_val = train_test_split(
         df_prepared[TEXT_COL], df_prepared[LABEL_COL], test_size=0.2, random_state=42, stratify=df_prepared[LABEL_COL]
