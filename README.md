@@ -1,24 +1,57 @@
 # MLOps Reviews Sentiment Prediction
+This project trains and serves a **sentiment classifier** that categorizes review sentences into **positive**, **neutral**, or **negative** classes.  
+Each review is split into individual sentences, and each sentence inherits the review’s star rating as its label.
 
-How to run:
+
+## 🧠 Project Overview
+
+The project includes:
+1. **Training pipeline** to preprocess data, extract features, and train a classifier.
+2. **FastAPI app** that serves predictions locally with **p99 latency ≤ 300 ms**.
+3. **Containerization** for easy local or cloud deployment.
+
+
+## How to run:
+### Requirements
+- python3.10
+- docker
+
+### Run:
 - Inference Server API
-<code>
+```bash
 docker build -t tfidf-sentiment -f inference.dockerfile .
-docker run -p 8000:8000 tfidf-sentiment   
-</code>
+docker run -p 8000:8000 tfidf-sentiment
+```
+- Test deployed server:
+```bash
+curl -X POST localhost:8002/predict -H 'Content-Type: application/json' \
+-d '{"sentences":["I loved this", "meh", "terrible product", "product is ok, can be better"]}'
+
+```
+- Output
+```json
+{
+  "sentiments": [
+    "positive","negative","negative","neutral"
+  ]
+}
+```
+
 - Model Training 
-<code>
+```bash
 docker build -t tfidf-sentiment-train -f training.dockerfile .
 docker run docker run tfidf-sentiment-train
-</code>
+```
+<br>
 
-<code>
+
+
+## ⚡ Performance Benchmark
+```bash
 hey -z 30s -c 20 -m POST -H "Content-Type: application/json" \
   -d '{"sentences": ["great book!", "meh", "terrible"]}' \
   http://localhost:8000/predict
-<code>
-## ⚡ Performance Benchmark
-
+```
 **Load test tool:** [`hey`](https://github.com/rakyll/hey)  
 **Endpoint tested:** `POST /predict`  
 **Payload:** `{"sentences": ["great book!", "meh", "terrible"]}`  
@@ -26,7 +59,6 @@ hey -z 30s -c 20 -m POST -H "Content-Type: application/json" \
 **Concurrency:** 20 clients  
 
 ### 📊 Summary
-
 | Metric | Result |
 |---------|---------|
 | **Total duration** | 30.08 seconds |
@@ -36,9 +68,7 @@ hey -z 30s -c 20 -m POST -H "Content-Type: application/json" \
 | **Slowest request** | 405.1 ms |
 | **Total responses** | 6,489 |
 | **Successful (200)** | 100% |
-
 ---
-
 ### ⏱️ Latency distribution
 
 | Percentile | Latency |
@@ -56,35 +86,21 @@ hey -z 30s -c 20 -m POST -H "Content-Type: application/json" \
 ---
 
 ### 📈 Response time histogram
-0.013 [1]   |
-0.052 [497] |■■■■■■
-0.092 [3379]|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-0.131 [1740]|■■■■■■■■■■■■■■■■■■■■■
-0.170 [587] |■■■■■■■
-0.209 [177] |■■
-0.248 [67]  |■
-0.288 [28]  |
-0.327 [9]   |
-0.366 [2]   |
-0.405 [2]   |
+| % | Graph |
+|-------------|----------|
+|0.013 [1]   | <br>
+|0.052 [497] |■■■■■■ <br>
+|0.092 [3379]|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ <br>
+|0.131 [1740]|■■■■■■■■■■■■■■■■■■■■■ <br>
+|0.170 [587] |■■■■■■■ <br>
+|0.209 [177] |■■ <br>
+|0.248 [67]  |■ <br>
+|0.288 [28]  | <br>
+|0.327 [9]   | <br>
+|0.366 [2]   | <br>
+|0.405 [2]   | <br>
 
 ---
-
-### 🔍 Network & request details
-
-| Phase | Average | Fastest | Slowest |
-|--------|----------|----------|----------|
-| DNS + Dialup | 0.0000 s | 0.0133 s | 0.4051 s |
-| DNS Lookup | 0.0000 s | 0.0000 s | 0.0028 s |
-| Request Write | 0.0000 s | 0.0000 s | 0.0012 s |
-| Response Wait | 0.0925 s | 0.0132 s | 0.4042 s |
-| Response Read | 0.0001 s | 0.0000 s | 0.0076 s |
-
----
-
-### ✅ Interpretation
-
-- The model and API are stable under 20 concurrent users.  
 - **p99 latency = 236 ms**, meeting the **<300 ms requirement**.  
 - No failed requests; consistent throughput (~216 req/sec).  
 - The deployment is suitable for local and cloud scaling (Docker-ready).
