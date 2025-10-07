@@ -2,6 +2,8 @@
 This project trains and serves a **sentiment classifier** that categorizes review sentences into **positive**, **neutral**, or **negative** classes.  
 Each review is split into individual sentences, and each sentence inherits the review’s star rating as its label.
 
+<br>
+
 
 ## 🧠 Project Overview
 
@@ -10,30 +12,45 @@ The project includes:
 2. **FastAPI app** that serves predictions locally with **p99 latency ≤ 300 ms**.
 3. **Containerization** for easy local or cloud deployment.
 
+<br>
+
+## Architecture
+![Model architecture](docs/architecture.png)
+
+
+<br>
+
 ## Project folders
+```
 main/
 │
-├── code
+├── code/
 │   ├── sentimentpredictor/
-│   │   ├── config
-│   │   ├── train
-│   │   ├── prediction
-│   │   ├── preprocessing
+│   │   ├── config/
+│   │   ├── train/
+│   │   ├── prediction/
+│   │   ├── preprocessing/
 │   │   └── preprocessing/
 │   └── tests/
 │      
-├── data
-├── notebooks
+├── data/
+├── notebooks/
 ├── inference.dockerfile
 ├── training.dockerfile
 ├── requirements-dev.txt
 └── requirements.txt
+```
+
+<br>
 
 ## How to run:
 ### Requirements
 - python3.10
 - docker
 - mlflow
+
+<br>
+
 
 ### Run:
 
@@ -70,8 +87,8 @@ curl -X POST localhost:8000/predict -H 'Content-Type: application/json' \
 -d '{"sentences":["I loved this", "meh", "terrible product", "product is ok, can be better"]}'
 
 ```
-- Output
-```json
+- Output Example
+```python
 {
   "sentiments": [
     "positive","negative","negative","neutral"
@@ -87,6 +104,7 @@ pytest -vv
 <br>
 
 
+<br>
 
 ## ⚡ Performance Benchmark
 ```bash
@@ -94,7 +112,6 @@ hey -z 30s -c 20 -m POST -H "Content-Type: application/json" \
   -d '{"sentences": ["great book!", "meh", "terrible"]}' \
   http://localhost:8000/predict
 ```
-**Load test tool:** [`hey`](https://github.com/rakyll/hey)  
 **Endpoint tested:** `POST /predict`  
 **Payload:** `{"sentences": ["great book!", "meh", "terrible"]}`  
 **Test duration:** 30 seconds  
@@ -128,19 +145,7 @@ hey -z 30s -c 20 -m POST -H "Content-Type: application/json" \
 ---
 
 ### 📈 Response time histogram
-| % | Graph |
-|-------------|----------|
-|0.011 [1]   | <br>
-|0.030 [3903] | ■■■■■■■■■■■■■■■■■  <br>
-|0.049 [9106] | ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■   <br> 
-| 0.068 [1733] | ■■■■■■■■   <br>
-| 0.86 [397] |■■   <br>
-| 0.105 [143] | <br>
-| 0.124 [58] | <br>
-| 0.143 [32] | <br>
-| 0.162 [23] | <br>
-| 0.181 [19] | <br>
-| 0.200 [13] |  <br>
+![Latency Distribution](docs/latencydistributionhistogram.png)
 
 
 ---
