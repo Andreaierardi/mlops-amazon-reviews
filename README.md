@@ -11,7 +11,8 @@ The project includes:
 1. **Training pipeline** to preprocess data, extract features, and train a classifier.
 2. **FastAPI app** that serves predictions locally with **p99 latency ≤ 300 ms**.
 3. **Containerization** for easy local or cloud deployment.
-
+4. **MLFlow** for model registry and monitoring
+   
 <br>
 
 ## Architecture
