@@ -107,6 +107,18 @@ pytest -vv
 
 <br>
 
+## Model performance
+
+Model performance on the validation dataset:
+
+| Metrics (Weighted Avg) | Sentence level pred | Full review level pred |
+|-------------------------|--------------------|-----------------------:|
+| **Precision** | 59.9  | 72.7 |
+| **Recall**   | 61.5 | 74.4|
+| **F1-score** | 59.8 |  72.8 |
+
+<br>
+
 ## ⚡ Performance Benchmark
 ```bash
 hey -z 30s -c 20 -m POST -H "Content-Type: application/json" \
