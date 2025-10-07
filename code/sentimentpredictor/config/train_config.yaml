@@ -3,7 +3,7 @@ random_state : 42
 data: 
   text_col: sentence
   label_col: sentiment
-  
+  text_col_original: text
 model:
   # Logistic Regression hyperparameters
   C: 2.0

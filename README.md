@@ -10,6 +10,24 @@ The project includes:
 2. **FastAPI app** that serves predictions locally with **p99 latency ≤ 300 ms**.
 3. **Containerization** for easy local or cloud deployment.
 
+## Project folders
+main/
+│
+├── code
+│   ├── sentimentpredictor/
+│   │   ├── config
+│   │   ├── train
+│   │   ├── prediction
+│   │   ├── preprocessing
+│   │   └── preprocessing/
+│   └── tests/
+│      
+├── data
+├── notebooks
+├── inference.dockerfile
+├── training.dockerfile
+├── requirements-dev.txt
+└── requirements.txt
 
 ## How to run:
 ### Requirements
@@ -45,7 +63,7 @@ docker run -p 8000:8000 \
   -e MODEL_URI=models:/sentiment-predictor/Production \
   tfidf-sentiment
   ```
-  
+
 - Test deployed server:
 ```bash
 curl -X POST localhost:8000/predict -H 'Content-Type: application/json' \
@@ -61,6 +79,10 @@ curl -X POST localhost:8000/predict -H 'Content-Type: application/json' \
 }
 ```
 
+- Run pytest:
+```bash
+pytest -vv
+```
 
 <br>
 

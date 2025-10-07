@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional, Union, Iterable
 import re, string, html
+import logging
 
 import pandas as pd
 import numpy as np
@@ -9,6 +10,16 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.pipeline import Pipeline
 
+# ============================================================
+# Logging setup
+# ============================================================
+logger = logging.getLogger("text-tfidf-transformer")
+if not logger.handlers:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+    )
+    
 class TextTfidfTransformer(BaseEstimator, TransformerMixin):
     """
     ColumnTransformer-friendly text cleaner + TF-IDF.
@@ -35,9 +46,11 @@ class TextTfidfTransformer(BaseEstimator, TransformerMixin):
         self.vectorizer_: Optional[TfidfVectorizer] = None
 
         self._validate_config()
+        logger.info("Initialized TextTfidfTransformer with config keys: %s", list(config.keys()))
 
     def _validate_config(self):
         cfg = self.config
+        logger.debug("Validating TF-IDF transformer configuration...")
 
         defaults_cleaning = dict(
             enabled=True,
@@ -67,6 +80,12 @@ class TextTfidfTransformer(BaseEstimator, TransformerMixin):
             user_tfidf["ngram_range"] = tuple(user_tfidf["ngram_range"])
         self.tfidf_params = {**defaults_tfidf, **user_tfidf}
 
+        logger.info(
+            "TF-IDF config validated — ngram_range=%s, min_df=%s, max_features=%s",
+            self.tfidf_params.get("ngram_range"),
+            self.tfidf_params.get("min_df"),
+            self.tfidf_params.get("max_features"),
+        )
 
     # --------------------- helpers ---------------------
     def _clean_one(self, t: Any) -> str:
@@ -118,11 +137,13 @@ class TextTfidfTransformer(BaseEstimator, TransformerMixin):
 
     # --------------------- sklearn API ---------------------
     def fit(self, X, y=None):
+        logger.info("Fitting TF-IDF transformer on input data...")
         s = self._as_series_1d(X).map(self._clean_one)
         self.vectorizer_ = TfidfVectorizer(**self.tfidf_params).fit(s)
         return self
 
     def transform(self, X):
+        logger.info("Transforming text data with TF-IDF...")
         if self.vectorizer_ is None:
             raise RuntimeError("Transformer not fitted. Call fit() or fit_transform() first.")
         s = self._as_series_1d(X).map(self._clean_one)

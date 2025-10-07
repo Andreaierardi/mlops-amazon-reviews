@@ -1,101 +1,105 @@
 from __future__ import annotations
 import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).resolve().parent.parent))
-import argparse
-import json
 import os
+import json
+import argparse
+import logging
 from datetime import datetime
 from pathlib import Path
 
+import yaml
 import joblib
 import numpy as np
 import pandas as pd
-import yaml
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 
-# local modules
-from preprocessing.datapreparator import DataPreparator
-from preprocessing.transformation import TextTfidfTransformer
-
-# MLflow
 import mlflow
 import mlflow.sklearn
 from mlflow.models.signature import infer_signature
 
+# Local imports
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+from preprocessing.datapreparator import DataPreparator
+from preprocessing.transformation import TextTfidfTransformer
+
+
+# ============================================================
+# Logging setup
+# ============================================================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+)
+logger = logging.getLogger("training-pipeline")
+
+
+# ============================================================
+# Utility Functions
+# ============================================================
+
+def load_yaml_config(path: Path) -> dict:
+    """Safely load a YAML configuration file."""
+    path = Path(path)
+    if not path.exists():
+        logger.error(f"Config file not found: {path}")
+        raise FileNotFoundError(f"Config file not found: {path}")
+    logger.info(f"Loading configuration: {path}")
+    with open(path, "r") as f:
+        cfg = yaml.safe_load(f)
+    logger.debug(f"Loaded keys: {list(cfg.keys())}")
+    return cfg
+
 
 def load_table(path: Path) -> pd.DataFrame:
+    """Load CSV or JSON/JSONL file into a DataFrame."""
     path = Path(path)
-    if path.suffix.lower() in {".csv"}:
-        return pd.read_csv(path)
-    if path.suffix.lower() in {".jsonl", ".json"}:
-        # try line-delimited first
+    logger.info(f"Loading dataset from: {path}")
+    if path.suffix.lower() == ".csv":
+        df = pd.read_csv(path)
+    elif path.suffix.lower() in {".jsonl", ".json"}:
         try:
-            return pd.read_json(path, lines=True)
+            df = pd.read_json(path, lines=True)
         except ValueError:
-            return pd.read_json(path)
-    raise ValueError(f"Unsupported data format: {path.suffix}")
+            df = pd.read_json(path)
+    else:
+        raise ValueError(f"Unsupported data format: {path.suffix}")
+    logger.info(f"Loaded {len(df):,} rows")
+    return df
 
 
+def prepare_data(df: pd.DataFrame, prep_config: dict, text_col: str, label_col: str) -> pd.DataFrame:
+    """Run data preparation pipeline and return cleaned DataFrame."""
+    logger.info("Preparing data...")
+    prep = DataPreparator(prep_config)
+    df_prepared = prep.transform(df)
+    #df_prepared = df_prepared[[text_col, label_col]].dropna()
+    logger.info(f"Prepared {len(df_prepared):,} rows after preprocessing")
+    return df_prepared
 
-def main(args: argparse.Namespace) -> None:
-    root_path = Path(__file__).parent.parent.parent
-    DATAPREP_FILE_NAME = 'dataprep_config.yaml'
-    TRANSF_FILE_NAME = 'transformation_config.yaml'
-    TRAINING_FILE_NAME = 'train_config.yaml'
-    config_path = root_path / args.config_path
-    prep_path = config_path / DATAPREP_FILE_NAME
-    transf_path = config_path / TRANSF_FILE_NAME
-    training_path = config_path / TRAINING_FILE_NAME
 
-    train_file = Path(args.train_file)
-    prep_config = yaml.safe_load(Path(prep_path).read_text())
-    transf_config =  yaml.safe_load(Path(transf_path).read_text())
-    train_config =  yaml.safe_load(Path(training_path).read_text())
+def build_pipeline(transf_config: dict, model_config: dict) -> Pipeline:
+    """Build sklearn pipeline for text TF-IDF + Logistic Regression."""
+    logger.info("Building training pipeline (TF-IDF + LogisticRegression)")
+    pipe = Pipeline([
+        ("tfidf", TextTfidfTransformer(transf_config)),
+        ("clf", LogisticRegression(**model_config)),
+    ])
+    return pipe
 
-    outdir: Path = Path(args.outdir)
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    run_dir = outdir / f"run_{ts}"
-    run_dir.mkdir(parents=True, exist_ok=True)
 
-    # =============== Data ===============
-    df = load_table(train_file)
-
-    TEXT_COL = train_config.get("text_col", "sentence")
-    LABEL_COL = train_config.get("label_col", "sentiment")
-
-    # Prepare sentences + labels
-    prep = DataPreparator(prep_config)  
-    df_prepared = prep.transform(df)  
-
-    # Keep only needed columns to avoid accidental leakage
-    df_prepared = df_prepared[[TEXT_COL, LABEL_COL]].dropna()
-
-    X_train, X_val, y_train, y_val = train_test_split(
-        df_prepared[TEXT_COL],
-        df_prepared[LABEL_COL],
-        test_size=0.2,
-        random_state=train_config.get("random_state", 42),
-        stratify=df_prepared[LABEL_COL],
-    )
-
-    # =============== Pipeline ===============
-    pipe = Pipeline(
-        steps=[
-            ("tfidf", TextTfidfTransformer(transf_config)),
-            ("clf", LogisticRegression(**train_config.get('model'))),
-        ]
-    )
-
-    pipe.fit(X_train, y_train)
+def evaluate_model(pipe: Pipeline, X_val, y_val, y_train=None) -> tuple[dict, np.ndarray, dict]:
+    """Evaluate model and return metrics, confusion matrix, and report."""
+    logger.info("Evaluating model...")
     y_pred = pipe.predict(X_val)
-
     report = classification_report(y_val, y_pred, output_dict=True, zero_division=0)
-    cm = confusion_matrix(y_val, y_pred, labels=sorted(np.unique(y_train)))
-
+    if y_train is None or y_train.empty:
+        cm = pd.Series()
+    else:
+        cm = confusion_matrix(y_val, y_pred, labels=sorted(np.unique(y_train)))
+    
     metrics = {
         "accuracy": float(report["accuracy"]),
         "f1_macro": float(report["macro avg"]["f1-score"]),
@@ -103,161 +107,169 @@ def main(args: argparse.Namespace) -> None:
         "recall_macro": float(report["macro avg"]["recall"]),
     }
 
-    # =============== Write local artifacts (unchanged behavior) ===============
+    logger.info(
+        "Evaluation complete — "
+        f"Accuracy: {metrics['accuracy']:.4f}, "
+        f"F1_macro: {metrics['f1_macro']:.4f}"
+    )
+    return metrics, cm, report
+
+
+def save_local_artifacts(run_dir: Path, pipe: Pipeline, metrics: dict, cm: np.ndarray, df_prepared: pd.DataFrame):
+    """Save model, metrics, and data preview locally."""
+    logger.info(f"Saving artifacts to {run_dir}")
+    run_dir.mkdir(parents=True, exist_ok=True)
     joblib.dump(pipe, run_dir / "pipeline.joblib")
     (run_dir / "metrics.json").write_text(json.dumps(metrics, indent=2))
     np.savetxt(run_dir / "confusion_matrix.csv", cm, fmt="%d", delimiter=",")
     df_prepared.head(100).to_csv(run_dir / "preview_data.csv", index=False)
+    logger.info("Artifacts saved successfully.")
 
-    print(f"[local] Saved model → {run_dir / 'pipeline.joblib'}")
-    print(f"[local] Metrics     → {run_dir / 'metrics.json'}")
 
-    # =============== MLflow logging & model saving ===============
-    # Tracking URI & experiment from env, with safe defaults
-    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "file:./mlruns"))
-    mlflow.set_experiment(os.getenv("MLFLOW_EXPERIMENT_NAME", "sentiment-training"))
+def log_to_mlflow(pipe: Pipeline, X_val, metrics, report, prep_config, transf_config, train_config, run_dir, ts):
+    """Log parameters, metrics, and model to MLflow."""
+    tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "file:./mlruns")
+    experiment_name = os.getenv("MLFLOW_EXPERIMENT_NAME", "sentiment-training")
+    mlflow.set_tracking_uri(tracking_uri)
+    mlflow.set_experiment(experiment_name)
+    logger.info(f"Logging to MLflow → URI: {tracking_uri}, Experiment: {experiment_name}")
 
     run_name = f"train_{ts}"
     with mlflow.start_run(run_name=run_name) as run:
-        # ---- Params (data/tfidf/model) ----
-        mlflow.log_params(
-            {
-                "text_col": TEXT_COL,
-                "label_col": LABEL_COL,
-                "explode_sentences": prep_config.get("explode_sentences", True),
-                "min_text_len": prep_config.get("min_text_len", 0),
-                "dropna": prep_config.get("dropna", True),
-                "dedupe": prep_config.get("dedupe", True),
-                # tfidf
-                "tfidf_ngram_range": str(transf_config.get("ngram_range", [1, 1])),
-                "tfidf_min_df": transf_config.get("min_df", 1),
-                "tfidf_max_df": transf_config.get("max_df", 1.0),
-                "tfidf_max_features": transf_config.get("max_features", None),
-                # model
-                "model_type": "LogisticRegression",
-                **{f"model_{k}": v for k, v in train_config.items()},
-            }
-        )
+        logger.info(f"Started MLflow run: {run.info.run_id}")
 
-        # ---- Metrics ----
+        # Parameters
+        mlflow.log_params({
+            "explode_sentences": prep_config.get("explode_sentences", True),
+            "min_text_len": prep_config.get("min_text_len", 0),
+            "tfidf_ngram_range": str(transf_config.get("ngram_range", [1, 1])),
+            "tfidf_min_df": transf_config.get("min_df", 1),
+            "tfidf_max_df": transf_config.get("max_df", 1.0),
+            "tfidf_max_features": transf_config.get("max_features", None),
+            "model_type": "LogisticRegression",
+            **{f"model_{k}": v for k, v in train_config.items()},
+        })
+
+        # Metrics
         mlflow.log_metrics(metrics)
-        # per-class f1 (if numeric classes 0/1/2)
         for label, stats in report.items():
-            if label in {"accuracy", "macro avg", "weighted avg"}:
-                continue
-            try:
-                mlflow.log_metric(f"class_{label}_f1", float(stats["f1-score"]))
-            except Exception:
-                pass
+            if label not in {"accuracy", "macro avg", "weighted avg"}:
+                try:
+                    mlflow.log_metric(f"class_{label}_f1", float(stats["f1-score"]))
+                except Exception:
+                    pass
 
-        # ---- Artifacts ----
+        # Artifacts
         mlflow.log_artifact(run_dir / "metrics.json")
         mlflow.log_artifact(run_dir / "confusion_matrix.csv")
 
-        # ---- Model (with signature & example) ----
-        # Build a small input example consistent with the pipeline interface
+        # Model
+        TEXT_COL = train_config.get("text_col", "sentence")
         sample_in = pd.DataFrame({TEXT_COL: X_val.iloc[:5].tolist()})
         sample_out = pipe.predict(sample_in[TEXT_COL])
         signature = infer_signature(sample_in, sample_out)
-
-        registered_name = train_config['mlflow']['registered_model_name']
+        registered_name = train_config.get("mlflow", {}).get("registered_model_name")
 
         mlflow.sklearn.log_model(
             sk_model=pipe,
             name="model",
             signature=signature,
             input_example=sample_in,
-            pip_requirements=["-r requirements.txt"],  # ensures env parity
+            pip_requirements=["-r requirements.txt"],
             registered_model_name=registered_name,
         )
 
-        print(f"[mlflow] run_id: {run.info.run_id}")
+        logger.info(f"Model logged to MLflow run {run.info.run_id}")
         if registered_name:
-            print(f"[mlflow] registered as: {registered_name}")
+            logger.info(f"Registered model name: {registered_name}")
 
-    print("Done.")
 
-def main2(args: argparse.Namespace) -> None:
+# ============================================================
+# Main Training Pipeline
+# ============================================================
+
+def main(args: argparse.Namespace):
+    """Full training workflow orchestrator."""
+    logger.info("=== Starting training pipeline ===")
     root_path = Path(__file__).parent.parent.parent
-
     config_path = root_path / args.config_path
-    prep_path = config_path / DATAPREP_FILE_NAME
-    transf_path = config_path / TRANSF_FILE_NAME
+    logger.info(f"Using configuration directory: {config_path}")
 
-    # --- Load YAML config properly ---
-    with open(prep_path, "r", encoding="utf-8") as f:
-        prep_config = yaml.safe_load(f)   # safe_load is recommended (prevents code execution)
+    prep_config = load_yaml_config(config_path / "dataprep_config.yaml")
+    transf_config = load_yaml_config(config_path / "transformation_config.yaml")
+    train_config = load_yaml_config(config_path / "train_config.yaml")
 
-    # --- Load YAML config properly ---
-    with open(transf_path, "r", encoding="utf-8") as f:
-        transf_config = yaml.safe_load(f)   # safe_load is recommended (prevents code execution)
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    run_dir = Path(args.outdir) / f"run_{ts}"
 
+    df = load_table(Path(args.train_file))
+    text_col = train_config.get("text_col", "sentence")
+    text_col_original = train_config.get("text_col_original", "text")
+    label_col = train_config.get("label_col", "sentiment")
 
-    # 1) load data
-    print('Data file path:',args.train_file)
-    df = pd.read_json(args.train_file, lines=True)
-    # 2) prepare sentences + labels
-    prep = DataPreparator(prep_config)  # supports explode_sentences, etc.
-    df_prepared = prep.transform(df)            # → columns: ['sentence', 'sentiment']
+    df_prepared = prepare_data(df, prep_config, text_col, label_col)
 
-
-    X_train, X_val, y_train, y_val = train_test_split(
-        df_prepared[TEXT_COL], df_prepared[LABEL_COL], test_size=0.2, random_state=42, stratify=df_prepared[LABEL_COL]
+    training_set, validation_set, training_target, validation_target = train_test_split(
+        df_prepared,
+        df_prepared[label_col],
+        test_size=0.2,
+        random_state=train_config.get("random_state", 42),
+        stratify=df_prepared[label_col],
     )
 
-    X = df_prepared[TEXT_COL]
-    y = df_prepared[LABEL_COL]
+    logger.info(f"Columns: {training_set.columns}")
+    cols = ['asin', 'user_id']
+    df_val_ids_user = validation_set.merge(training_set[cols], on=cols, how='left', indicator=True).query('_merge == "left_only"').drop('_merge', axis=1)
 
-    # 3) build end-to-end pipeline (featureizer + classifier)
-    pipe = Pipeline([
-        ("tfidf", TextTfidfTransformer(transf_config)),
-        ("clf", LogisticRegression(
-            solver="saga", max_iter=2000, class_weight="balanced", n_jobs=-1, C=1.0
-        )),
-    ])
 
-    # 4) (optional) hold-out validation
-    # For simplicity assume a provided dev set; else do train_test_split here
-    metrics = {}
+    X_train = training_set[text_col]
+    y_train = training_target
+    X_val = validation_set[text_col]
+    y_val = validation_target
 
+    logger.info(f"X_train shape: {X_train.shape}")
+    logger.info(f"y_train shape: {y_train.shape}")
+    logger.info(f"X_val shape: {X_val.shape}")
+    logger.info(f"y_val shape: {y_val.shape}")
+
+
+    pipe = build_pipeline(transf_config, train_config.get("model"))
+    logger.info("Fitting model...")
     pipe.fit(X_train, y_train)
-    preds = pipe.predict(X_val)
+
+    metrics, cm, report = evaluate_model(pipe, X_val, y_val, y_train)
     
-    print(pipe.score(X_val, y_val))
-    print("\nValidation report:\n", classification_report(y_val, preds))
-    metrics["val_report"] = classification_report(y_val, preds, output_dict=True)
+    save_local_artifacts(run_dir, pipe, metrics, cm, df_prepared)
+    log_to_mlflow(pipe, X_val, metrics, report, prep_config, transf_config, train_config, run_dir, ts)
 
-    pipe.fit(X, y)
+    ### Results on the original text ###
+    logger.info("=== Computing results on original dataset ===")
 
-    # 5) save artifacts
+    prep_config_orig = prep_config.copy()
+    prep_config_orig['filters']['explode_sentences'] = False
 
-    # --- create timestamped output directory ---
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = args.outdir / f"run_{timestamp}"
-    run_dir.mkdir(parents=True, exist_ok=True)
+    df_prepared_orig = prepare_data(df, prep_config_orig, text_col_original, label_col)
+    logger.info("Filtering original by selected row for validation")   
+    df_prepared_orig = df_prepared_orig.merge(df_val_ids_user[cols], on=cols, how='inner')
 
-    joblib.dump(pipe, run_dir / "pipeline.joblib")
-    with open(run_dir / "training_meta.json", "w") as f:
-        json.dump({
-            "config_path": str(args.config_path),
-            "n_train": int(len(X_train)),
-            "classes": [0,1,2],
-            "model": "logreg_saga_tfidf",
-            "metrics": metrics,
-        }, f, indent=2)
-    print(f"\nSaved model to {run_dir / 'pipeline.joblib'}")
+    X_val_orig = df_prepared_orig[text_col_original]
+    y_val_orig = df_prepared_orig[label_col]
 
-    df_prepared.to_csv(run_dir / "data_prep.csv")
+    metrics_orig, cm_orig, report_orig = evaluate_model(pipe, X_val_orig, y_val_orig)
+    
+    save_local_artifacts(run_dir, pipe, metrics_orig, cm_orig, X_val_orig)
+    log_to_mlflow(pipe, X_val_orig, metrics_orig, report_orig, prep_config_orig, transf_config, train_config, run_dir, ts)
+    
+    logger.info("✅ Training pipeline completed successfully.")
 
+
+# ============================================================
+# Entry point
+# ============================================================
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--train-file", type=str, required=True)
     parser.add_argument("--config-path", type=str, required=True)
     parser.add_argument("--outdir", type=Path, default=Path("artifacts"))
-    parser.add_argument(
-        "--registered-model-name",
-        type=str,
-        default=None,
-        help="If set, registers in MLflow Model Registry under this name.",
-    )
-    main(parser.parse_args())
+    args = parser.parse_args()
+    main(args)
