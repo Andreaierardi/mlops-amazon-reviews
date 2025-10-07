@@ -95,6 +95,8 @@ def evaluate_model(pipe: Pipeline, X_val, y_val, y_train=None) -> tuple[dict, np
     logger.info("Evaluating model...")
     y_pred = pipe.predict(X_val)
     report = classification_report(y_val, y_pred, output_dict=True, zero_division=0)
+    logger.info(f"Report: {report}")
+
     if y_train is None or y_train.empty:
         cm = pd.Series()
     else:
